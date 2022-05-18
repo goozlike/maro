@@ -71,7 +71,7 @@ class ActorCritic(AbsAgent):
             raise UnrecognizedTask(f"Expected model task names 'actor' and 'critic', but got {model.task_names}")
         super().__init__(model, config)
 
-    def choose_action(self, state: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def choose_action(self, state: np.ndarray, valid_actions=[], greedy=False) -> Tuple[np.ndarray, np.ndarray]:
         """Use the actor (policy) model to generate stochastic actions.
 
         Args:
@@ -85,8 +85,22 @@ class ActorCritic(AbsAgent):
         if is_single:
             state = state.unsqueeze(dim=0)
 
-        action_prob = Categorical(self.model(state, task_name="actor", training=False))
-        action = action_prob.sample()
+        model_out = self.model(state, task_name="actor", training=False)
+
+        model_out[0][torch.isnan(model_out[0])] = 1 / model_out.shape[1]
+        #filter invalid
+        if len(valid_actions):
+            mask = np.ones(model_out.shape,dtype=bool)[0]
+            mask[valid_actions] = False
+            model_out[0][mask] = 0.0
+        action_prob = Categorical(model_out)
+        
+        if greedy:
+            action = np.argmax(model_out).unsqueeze(dim=0)
+        else:
+            action = action_prob.sample()
+
+
         log_p = action_prob.log_prob(action)
         action, log_p = action.cpu().numpy(), log_p.cpu().numpy()
         return (action[0], log_p[0]) if is_single else (action, log_p)

@@ -56,7 +56,8 @@ class Actor(object):
         _, event, is_done = self.env.step(None)
         while not is_done:
             state_by_agent = self.trajectory.get_state(event)
-            action_by_agent = self.agent.choose_action(state_by_agent)
+            action_by_agent = self.agent.choose_action(state_by_agent, event.valid_pms)
+            # action_by_agent = self.agent.choose_action(state_by_agent)
             env_action = self.trajectory.get_action(action_by_agent, event)
             if len(env_action) == 1:
                 env_action = list(env_action.values())[0]

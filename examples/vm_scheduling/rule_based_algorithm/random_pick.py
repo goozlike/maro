@@ -1,7 +1,7 @@
 import random
 
 from maro.simulator import Env
-from maro.simulator.scenarios.vm_scheduling import AllocateAction, DecisionPayload
+from maro.simulator.scenarios.vm_scheduling import AllocateAction, DecisionPayload, PostponeAction
 
 from rule_based_algorithm import RuleBasedAlgorithm
 
@@ -11,6 +11,12 @@ class RandomPick(RuleBasedAlgorithm):
         super().__init__()
         
     def allocate_vm(self, decision_event: DecisionPayload, env: Env) -> AllocateAction:
+        if len(decision_event.valid_pms) == 0:
+            return PostponeAction(
+                vm_id=decision_event.vm_id,
+                postpone_step=1
+            )
+        
         valid_pm_num: int = len(decision_event.valid_pms)
         # Random choose a valid PM.
         chosen_idx: int = random.randint(0, valid_pm_num - 1)

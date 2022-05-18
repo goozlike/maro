@@ -1,5 +1,5 @@
 from maro.simulator import Env
-from maro.simulator.scenarios.vm_scheduling import AllocateAction, DecisionPayload
+from maro.simulator.scenarios.vm_scheduling import AllocateAction, DecisionPayload, PostponeAction
 
 from rule_based_algorithm import RuleBasedAlgorithm
 
@@ -10,11 +10,13 @@ class FirstFit(RuleBasedAlgorithm):
 
     def allocate_vm(self, decision_event: DecisionPayload, env: Env) -> AllocateAction:
         # Use a valid PM based on its order.
-        chosen_idx: int = decision_event.valid_pms[0]
-        # Take action to allocate on the chose PM.
-        action: AllocateAction = AllocateAction(
-            vm_id=decision_event.vm_id,
-            pm_id=chosen_idx
-        )
+        if len(decision_event.valid_pms) == 0:
+            return PostponeAction(
+                vm_id=decision_event.vm_id,
+                postpone_step=1
+            )
 
-        return action
+        return AllocateAction(
+            vm_id=decision_event.vm_id,
+            pm_id=decision_event.valid_pms[0]
+        )

@@ -5,6 +5,7 @@ import os
 import shutil
 import tarfile
 from typing import Dict, List, Optional
+import numpy as np
 
 from yaml import safe_load
 
@@ -409,6 +410,8 @@ class VmSchedulingBusinessEngine(AbsBusinessEngine):
         """Reset internal states for episode."""
         self._init_metrics()
 
+        self._start_tick = np.random.randint(0, 1234)
+
         self._frame.reset()
         self._snapshots.reset()
 
@@ -489,7 +492,8 @@ class VmSchedulingBusinessEngine(AbsBusinessEngine):
             vm_info.add_utilization(cpu_utilization=cur_tick_cpu_utilization[vm.vm_id])
             vm_req_payload: VmRequestPayload = VmRequestPayload(
                 vm_info=vm_info,
-                remaining_buffer_time=self._buffer_time_budget
+                remaining_buffer_time=self._buffer_time_budget,
+                # requests_left_in_this_tick=len(self._vm_item_picker.items(tick)) - i
             )
             vm_request_event = self._event_buffer.gen_cascade_event(
                 tick=tick,
@@ -737,28 +741,28 @@ class VmSchedulingBusinessEngine(AbsBusinessEngine):
         valid_pm_list = []
 
         # Delay-insensitive: 0, Interactive: 1, and Unknown: 2.
-        if vm_category == VmCategory.INTERACTIVE or vm_category == VmCategory.UNKNOWN:
-            valid_pm_list = self._get_valid_non_oversubscribable_pms(
-                vm_cpu_cores_requirement=vm_cpu_cores_requirement,
-                vm_memory_requirement=vm_memory_requirement
-            )
-        else:
-            valid_pm_list = self._get_valid_oversubscribable_pms(
-                vm_cpu_cores_requirement=vm_cpu_cores_requirement,
-                vm_memory_requirement=vm_memory_requirement
-            )
+        # if vm_category == VmCategory.INTERACTIVE or vm_category == VmCategory.UNKNOWN:
+        valid_pm_list = self._get_valid_non_oversubscribable_pms(
+            vm_cpu_cores_requirement=vm_cpu_cores_requirement,
+            vm_memory_requirement=vm_memory_requirement
+        )
+        # else:
+        #     valid_pm_list = self._get_valid_oversubscribable_pms(
+        #         vm_cpu_cores_requirement=vm_cpu_cores_requirement,
+        #         vm_memory_requirement=vm_memory_requirement
+        #     )
 
         return valid_pm_list
 
     def _get_valid_non_oversubscribable_pms(self, vm_cpu_cores_requirement: int, vm_memory_requirement: int) -> list:
         valid_pm_list = []
         for pm in self._machines:
-            if pm.oversubscribable == PmState.EMPTY or pm.oversubscribable == PmState.NON_OVERSUBSCRIBABLE:
+            # if pm.oversubscribable == PmState.EMPTY or pm.oversubscribable == PmState.NON_OVERSUBSCRIBABLE:
                 # In the condition of non-oversubscription, the valid PMs mean:
                 # PM allocated resource + VM allocated resource <= PM capacity.
-                if (pm.cpu_cores_allocated + vm_cpu_cores_requirement <= pm.cpu_cores_capacity
-                        and pm.memory_allocated + vm_memory_requirement <= pm.memory_capacity):
-                    valid_pm_list.append(pm.id)
+            if (pm.cpu_cores_allocated + vm_cpu_cores_requirement <= pm.cpu_cores_capacity
+                    and pm.memory_allocated + vm_memory_requirement <= pm.memory_capacity):
+                valid_pm_list.append(pm.id)
 
         return valid_pm_list
 
@@ -824,29 +828,30 @@ class VmSchedulingBusinessEngine(AbsBusinessEngine):
             vm_category=vm_info.category
         )
 
-        if len(valid_pm_list) > 0:
+        # if len(valid_pm_list) > 0:
             # Generate pending decision.
-            decision_payload = DecisionPayload(
-                frame_index=self.frame_index(tick=self._tick),
-                valid_pms=valid_pm_list,
-                vm_id=vm_info.id,
-                vm_cpu_cores_requirement=vm_info.cpu_cores_requirement,
-                vm_memory_requirement=vm_info.memory_requirement,
-                vm_sub_id=vm_info.sub_id,
-                vm_category=vm_info.category,
-                remaining_buffer_time=remaining_buffer_time
-            )
-            self._pending_action_vm_id = vm_info.id
-            pending_decision_event = self._event_buffer.gen_decision_event(
-                tick=vm_request_event.tick, payload=decision_payload)
-            vm_request_event.add_immediate_event(event=pending_decision_event)
-        else:
-            # Either postpone the requirement event or failed.
-            self._postpone_vm_request(
-                postpone_type=PostponeType.Resource,
-                vm_id=vm_info.id,
-                remaining_buffer_time=remaining_buffer_time
-            )
+        decision_payload = DecisionPayload(
+            frame_index=self.frame_index(tick=self._tick),
+            valid_pms=valid_pm_list,
+            vm_id=vm_info.id,
+            vm_cpu_cores_requirement=vm_info.cpu_cores_requirement,
+            vm_memory_requirement=vm_info.memory_requirement,
+            vm_sub_id=vm_info.sub_id,
+            vm_category=vm_info.category,
+            remaining_buffer_time=remaining_buffer_time,
+            lifetime = vm_info.lifetime,
+        )
+        self._pending_action_vm_id = vm_info.id
+        pending_decision_event = self._event_buffer.gen_decision_event(
+            tick=vm_request_event.tick, payload=decision_payload)
+        vm_request_event.add_immediate_event(event=pending_decision_event)
+        # else:
+        #     # Either postpone the requirement event or failed.
+        #     self._postpone_vm_request(
+        #         postpone_type=PostponeType.Resource,
+        #         vm_id=vm_info.id,
+        #         remaining_buffer_time=remaining_buffer_time
+        #     )
 
     def _on_action_received(self, event: CascadeEvent):
         """Callback wen we get an action from agent."""

@@ -69,10 +69,13 @@ class DQN(AbsAgent):
             )
         super().__init__(model, config)
         self._training_counter = 0
-        self._target_model = model.copy() if model.trainable else None
+        self._target_model = model.copy() if model.trainable else None       
+        # self._target_model._component.to(torch.device("cuda"))
 
-    def choose_action(self, state: np.ndarray) -> Union[int, np.ndarray]:
+    # def choose_action(self, state: np.ndarray) -> Union[int, np.ndarray]:
+    def choose_action(self, state: np.ndarray, valid_actions) -> Union[int, np.ndarray]:
         state = torch.from_numpy(state)
+
         if self.device:
             state = state.to(self.device)
         is_single = len(state.shape) == 1
@@ -80,17 +83,27 @@ class DQN(AbsAgent):
             state = state.unsqueeze(dim=0)
 
         q_values = self._get_q_values(state, training=False)
+        q_values = np.abs(q_values)
+        
+        #filter unvalid
+        mask = np.ones_like(q_values[0],dtype=bool)
+        mask[valid_actions] = False
+        q_values[0][mask] = 0
+
         num_actions = q_values.shape[1]
         greedy_action = q_values.argmax(dim=1).data.cpu()
         # No exploration
         if self.config.epsilon == .0:
             return greedy_action.item() if is_single else greedy_action.numpy()
-
         if is_single:
-            return greedy_action if np.random.random() > self.config.epsilon else np.random.choice(num_actions)
+            if len(valid_actions) == 0:
+                return greedy_action
+            return greedy_action if np.random.random() > self.config.epsilon else np.random.choice(valid_actions)
+            # return greedy_action if np.random.random() > self.config.epsilon else np.random.choice(num_actions)
 
         # batch inference
         return np.array([
+            # act if np.random.random() > self.config.epsilon else np.random.choice(valid_actions)
             act if np.random.random() > self.config.epsilon else np.random.choice(num_actions)
             for act in greedy_action
         ])
@@ -122,10 +135,11 @@ class DQN(AbsAgent):
         if self._training_counter % self.config.target_update_freq == 0:
             self._target_model.soft_update(self.model, self.config.tau)
 
-        return loss.detach().numpy()
+        return loss.detach().cpu().numpy()
 
     def set_exploration_params(self, epsilon):
-        self.config.epsilon = epsilon
+        # self.config.epsilon = epsilon
+        self.config.epsilon = epsilon["epsilon"]
 
     def _get_q_values(self, states: torch.Tensor, is_eval: bool = True, training: bool = True):
         output = self.model(states, training=training) if is_eval else self._target_model(states, training=False)
